@@ -17,6 +17,10 @@ const firebaseConfig = {
 const app = firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 
+// Usaremos um nó específico para o estado da aplicação para não tocar na raiz '/'
+const ROOT_DB_PATH = '/appState';
+
+
 // ----------------- Helpers -----------------
 function uuid(){ return 'id-' + Math.random().toString(36).slice(2,9); }
 function nowISO(){ return new Date().toISOString().slice(0,10); }
@@ -44,16 +48,13 @@ function defaultPowersFor(role){
 }
 
 function sampleData(){
-  const now = timestamp(); // Data de criação padrão para amostras
+  const now = timestamp();
   const interns = [];
-  // ********** ALTERAÇÃO AQUI: Criar apenas 2 perfis de estagiário **********
-  for(let i=1;i<=2;i++){ 
+  for(let i=1;i<=2;i++){
     interns.push({ id: 'intern-'+i, name: `Estagiário ${i}`, dates: [], hoursEntries: [], auditLog: [] });
   }
   const users = [];
-  // Usuário Admin
   users.push({ id: uuid(), username: 'admin', name: 'Administrador Principal', password: 'admin123', role: 'super', powers: defaultPowersFor('super'), selfPasswordChange: true, createdAt: now });
-  // Usuários Estagiários
   interns.forEach((it, idx)=>{
     users.push({ id: uuid(), username: 'est'+(idx+1), password: 'senha123', role: 'intern', internId: it.id, powers: defaultPowersFor('intern'), selfPasswordChange: true, createdAt: now });
   });
@@ -64,61 +65,65 @@ function sampleData(){
 
 // Funções de salvamento e carregamento agora usam o Firebase
 async function load(){
-  try{
-    const snapshot = await database.ref('/').once('value');
+  try {
+    // lê sempre do nó único definido
+    const snapshot = await database.ref(ROOT_DB_PATH).once('value');
     const data = snapshot.val();
-
-    // ********** ALTERAÇÃO IMPORTANTE AQUI **********
-    // Se o banco estiver vazio ou a chamada falhar, retorna uma estrutura vazia 
-    // em vez de chamar sampleData(), para evitar o reset.
     if(!data) {
-        console.warn("Nenhum dado encontrado no Firebase. Retornando estrutura vazia. Se esta é a primeira execução, use 'admin' / 'admin123' para criar a primeira estrutura.");
-        return { 
-            users: [], 
-            interns: [], 
-            meta: { created: timestamp(), provaBlockDays: 0, trashRetentionDays: 10 }, 
-            pendingRegistrations: [], 
-            trash: [] 
-        };
+      console.warn("Nenhum dado encontrado em " + ROOT_DB_PATH + ". Retornando estrutura vazia (não será gravado automaticamente).");
+      return {
+        users: [],
+        interns: [],
+        meta: { created: timestamp(), provaBlockDays: 0, trashRetentionDays: 10 },
+        pendingRegistrations: [],
+        trash: []
+      };
     }
-    // **********************************************
 
-    // Migração e inicialização de meta-dados, se necessário
+    // normaliza metadata mínima
     const parsed = data;
     parsed.meta = parsed.meta || {};
     if(typeof parsed.meta.provaBlockDays === 'undefined') parsed.meta.provaBlockDays = 0;
     if(typeof parsed.meta.trashRetentionDays === 'undefined') parsed.meta.trashRetentionDays = 10;
-    parsed.interns = (parsed.interns || []).map(i=> Object.assign({ hoursEntries:[], auditLog:[] }, i));
+    parsed.interns = (parsed.interns || []).map(i => Object.assign({ hoursEntries:[], auditLog:[] }, i));
     parsed.pendingRegistrations = parsed.pendingRegistrations || [];
     parsed.trash = parsed.trash || [];
-
-    // Garante que todos os usuários tenham a data de criação e um nome (fallback para username)
     const fallbackDate = parsed.meta.created || timestamp();
-    parsed.users = (parsed.users || []).map(u => ({ 
-        ...u, 
-        createdAt: u.createdAt || fallbackDate,
-        name: u.name || (u.role !== 'intern' ? u.username : undefined) // Novo: Garante um campo 'name' para admins
+
+    // Corrige o mapeamento de users (removendo o ".u" inválido)
+    parsed.users = (parsed.users || []).map(u => ({
+      id: u.id || uuid(),
+      username: u.username,
+      name: u.name || (u.role !== 'intern' ? u.username : undefined),
+      password: u.password || 'senha123',
+      role: u.role || 'intern',
+      internId: u.internId || null,
+      powers: u.powers || defaultPowersFor(u.role || 'intern'),
+      selfPasswordChange: (typeof u.selfPasswordChange === 'undefined') ? true : !!u.selfPasswordChange,
+      createdAt: u.createdAt || fallbackDate
     }));
 
     return parsed;
-  }catch(e){
+  } catch (e) {
     console.error("Erro ao carregar dados do Firebase:", e);
-    // ********** ALTERAÇÃO IMPORTANTE AQUI **********
-    // Em caso de erro, retorna uma estrutura vazia para evitar sobrescrever dados.
-    return { 
-        users: [], 
-        interns: [], 
-        meta: { created: timestamp(), provaBlockDays: 0, trashRetentionDays: 10 }, 
-        pendingRegistrations: [], 
-        trash: [] 
+    return {
+      users: [],
+      interns: [],
+      meta: { created: timestamp(), provaBlockDays: 0, trashRetentionDays: 10 },
+      pendingRegistrations: [],
+      trash: []
     };
-    // **********************************************
   }
 }
 
-async function save(state){
+// Salva apenas no nó ROOT_DB_PATH — única definição de save()
+async function save(stateObj){
+  if(!stateObj || typeof stateObj !== 'object'){
+    console.warn('Refusing to save invalid state:', stateObj);
+    return false;
+  }
   try {
-    await database.ref('/').set(state);
+    await database.ref(ROOT_DB_PATH).set(stateObj);
     return true;
   } catch (e) {
     console.error("Erro ao salvar dados no Firebase:", e);
@@ -127,22 +132,25 @@ async function save(state){
 }
 
 // ----------------- App State -----------------
-let state = null; // O estado será carregado de forma assíncrona
+let state = null; // será carregado assincronamente
 const root = document.getElementById('root');
 let session = null;
-let userFilter = 'all'; // NOVO: Estado do filtro de usuários (all, intern, admin)
+let userFilter = 'all';
 
-// Funções para iniciar a aplicação após carregar os dados
-async function initApp() {
-  // Se o estado inicial estiver vazio (após a modificação no load), 
-  // carregamos o sampleData, mas APENAS na primeira vez que for vazio.
+// initApp: carrega o estado. Se vazio, usa sampleData localmente mas NÃO grava automaticamente.
+async function initApp(){
   state = await load();
-  if (state.users.length === 0 && state.interns.length === 0) {
-      console.log("Sistema iniciando com Sample Data, pois a estrutura está vazia.");
-      state = sampleData();
-      await save(state); // Salva o Sample Data no Firebase para que persista
+
+  // se o banco estava vazio, deixamos sampleData em memória — NÃO gravamos automaticamente
+  if ((state.users || []).length === 0 && (state.interns || []).length === 0) {
+    console.log("Banco vazio — inicializando com sampleData em memória. Nenhum dado foi gravado automaticamente no Firebase.");
+    state = sampleData(); // apenas para permitir testes locais / login inicial
+
+    // Se você quiser **gravar** o sample data automaticamente apenas na primeira execução,
+    // descomente a linha abaixo. CUIDADO: isso grava no Firebase. COMENTAR PARA DESATIVAR
+    //await save(state);
   }
-  
+
   render();
   cleanupRejectedRegistrations();
 }
