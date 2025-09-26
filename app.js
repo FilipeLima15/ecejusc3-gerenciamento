@@ -1,16 +1,16 @@
 /* app.js - Versão modificada para Firebase Realtime Database.
-   Substitui localStorage por funções assíncronas de leitura e escrita no Firebase.
+   Substitui localStorage por funções assíncronas de leitura e escrita no Firebase.
 */
 
 // Cole suas credenciais do Firebase aqui. Você as encontra no seu Firebase Console.
 const firebaseConfig = {
-  apiKey: "AIzaSyCjF10zeV41Aj4XNb48_gFv8GTGyihTHFc",
-  authDomain: "sistema-folga-prova.firebaseapp.com",
-  databaseURL: "https://pauta-compartilhada-default-rtdb.firebaseio.com/",
-  projectId: "sistema-folga-prova",
-  storageBucket: "sistema-folga-prova.firebasestorage.app",
-  messagingSenderId: "689006902259",
-  appId: "1:689006902259:web:a26916edebf510c2a37086"
+apiKey: "AIzaSyCjF10zeV41Aj4XNb48_gFv8GTGyihTHFc",
+authDomain: "sistema-folga-prova.firebaseapp.com",
+databaseURL: "https://sistema-folga-prova-default-rtdb.firebaseio.com",
+projectId: "sistema-folga-prova",
+storageBucket: "sistema-folga-prova.firebasestorage.app",
+messagingSenderId: "689006902259",
+appId: "1:689006902259:web:a26916edebf510c2a37086"
 };
 
 // Inicializa o Firebase
