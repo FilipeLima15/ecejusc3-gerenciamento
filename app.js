@@ -27,7 +27,7 @@ function nowISO(){ return new Date().toISOString().slice(0,10); }
 function timestamp(){ return new Date().toISOString(); }
 function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>', '&gt;'); }
 // Função para download de blob (agora movida para o contexto do Manager)
-function downloadBlob(txt, filename){ const blob = new Blob([txt], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); }
+function downloadBlob(txt, filename, mimeType='application/json'){ const blob = new Blob([txt], { type: mimeType }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); }
 
 // Novo helper para formatar a data (dd/mm/aaaa)
 function formatDate(isoString) {
@@ -54,7 +54,8 @@ function sampleData(){
     interns.push({ id: 'intern-'+i, name: `Estagiário ${i}`, dates: [], hoursEntries: [], auditLog: [] });
   }
   const users = [];
-  users.push({ id: uuid(), username: 'admin', name: 'Administrador Principal', password: 'admin123', role: 'super', powers: defaultPowersFor('super'), selfPasswordChange: true, createdAt: now });
+  // ALTERAÇÃO 1: Senha do admin principal mudada para Admin123#admin123
+  users.push({ id: uuid(), username: 'admin', name: 'Administrador Principal', password: 'Admin123#admin123', role: 'super', powers: defaultPowersFor('super'), selfPasswordChange: true, createdAt: now });
   interns.forEach((it, idx)=>{
     users.push({ id: uuid(), username: 'est'+(idx+1), password: 'senha123', role: 'intern', internId: it.id, powers: defaultPowersFor('intern'), selfPasswordChange: true, createdAt: now });
   });
@@ -194,20 +195,26 @@ function render(){
 // ----------------- LOGIN -----------------
 function renderLogin(){
   root.innerHTML = '';
-  const card = document.createElement('div'); card.className='card';
+  // Remove a classe 'app' do root temporariamente para permitir o layout de tela cheia do login
+  root.className = 'login-screen';
+  
+  // Adiciona a classe 'login-card' que será estilizada no CSS
+  const card = document.createElement('div'); card.className='login-card';
   card.innerHTML = `
     <h2>Entrar</h2>
 
-    <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-width:480px">
-      <input id="inpUser" placeholder="Usuário" />
-      <div style="position:relative;">
-        <input id="inpPass" placeholder="Senha" type="password" style="padding-right: 36px;" />
+    <div class="login-input-group">
+      <input id="inpUser" placeholder="Usuário" class="input-modern" />
+      <div class="password-wrapper">
+        <input id="inpPass" placeholder="Senha" type="password" class="input-modern" />
         <span class="password-toggle-icon" id="toggleLoginPass">🔒</span>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div class="login-buttons">
         <button class="button" id="btnLogin">Entrar</button>
         <button class="button ghost" id="btnNewUserLogin">Novo usuário</button>
-        <button class="button ghost small" id="btnForgotPass" style="margin-top: 8px;">Esqueci a senha</button>
+        <button class="button ghost small" id="btnForgotPass">Esqueci a senha</button>
+      </div>
+    </div>
   `;
   root.appendChild(card);
 
@@ -217,6 +224,8 @@ function renderLogin(){
     const user = (state.users || []).find(x=>x.username === u && x.password === p);
     if(!user) return alert('Usuário ou senha inválidos');
     session = { userId: user.id };
+    // Reverte para a classe 'app' após o login
+    root.className = 'app'; 
     await save(state);
     render();
   });
@@ -230,11 +239,8 @@ function renderLogin(){
   // Toggle password visibility
   const toggleLoginPass = document.getElementById('toggleLoginPass');
   const inpPass = document.getElementById('inpPass');
-  toggleLoginPass.style.position = 'absolute';
-  toggleLoginPass.style.right = '10px';
-  toggleLoginPass.style.top = '50%';
-  toggleLoginPass.style.transform = 'translateY(-50%)';
-  toggleLoginPass.style.cursor = 'pointer';
+  
+  // A lógica de posicionamento foi movida para o CSS, apenas a função é necessária
   toggleLoginPass.addEventListener('click', () => {
       const type = inpPass.getAttribute('type') === 'password' ? 'text' : 'password';
       inpPass.setAttribute('type', type);
@@ -315,11 +321,7 @@ function showPreRegistrationModal(){
 
   const togglePreRegPass1 = m.modal.querySelector('#togglePreRegPass1');
   const preRegPass = m.modal.querySelector('#preRegPass');
-  togglePreRegPass1.style.position = 'absolute';
-  togglePreRegPass1.style.right = '10px';
-  togglePreRegPass1.style.top = '50%';
-  togglePreRegPass1.style.transform = 'translateY(-50%)';
-  togglePreRegPass1.style.cursor = 'pointer';
+  // A lógica de posicionamento foi movida para o CSS
   togglePreRegPass1.addEventListener('click', () => {
       const type = preRegPass.getAttribute('type') === 'password' ? 'text' : 'password';
       preRegPass.setAttribute('type', type);
@@ -328,11 +330,7 @@ function showPreRegistrationModal(){
 
   const togglePreRegPass2 = m.modal.querySelector('#togglePreRegPass2');
   const preRegPassConfirm = m.modal.querySelector('#preRegPassConfirm');
-  togglePreRegPass2.style.position = 'absolute';
-  togglePreRegPass2.style.right = '10px';
-  togglePreRegPass2.style.top = '50%';
-  togglePreRegPass2.style.transform = 'translateY(-50%)';
-  togglePreRegPass2.style.cursor = 'pointer';
+  // A lógica de posicionamento foi movida para o CSS
   togglePreRegPass2.addEventListener('click', () => {
       const type = preRegPassConfirm.getAttribute('type') === 'password' ? 'text' : 'password';
       preRegPassConfirm.setAttribute('type', type);
@@ -371,6 +369,68 @@ function showPreRegistrationModal(){
     m.close(); m.cleanup();
   });
 }
+
+// NOVO: Modal de alteração de senha (Administrador)
+function showChangePwdModalManager(user){
+  const html = `
+    <div style="display:flex;justify-content:space-between;align-items:center"><h3>Alterar minha senha</h3><button id="closeP" class="button ghost">Fechar</button></div>
+    <form id="formPwd" style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+      <label style="position:relative;"><span class="small-muted">Senha atual</span>
+        <input type="password" id="curPwd" required style="padding-right: 36px;"/>
+        <span class="password-toggle-icon" id="toggleCurPwd">🔒️</span>
+      </label>
+      <label style="position:relative;"><span class="small-muted">Nova senha</span>
+        <input type="password" id="newPwd" required style="padding-right: 36px;"/>
+        <span class="password-toggle-icon" id="toggleNewPwd">🔒️</span>
+      </label>
+      <div style="display:flex;justify-content:flex-end;gap:8px"><button type="submit" class="button">Alterar</button></div>
+    </form>
+  `;
+  const m = showModal(html);
+  m.modal.querySelector('#closeP').addEventListener('click', ()=> { m.close(); m.cleanup(); });
+
+  const toggleCurPwd = m.modal.querySelector('#toggleCurPwd');
+  const curPwd = m.modal.querySelector('#curPwd');
+  toggleCurPwd.style.position = 'absolute';
+  toggleCurPwd.style.right = '10px';
+  toggleCurPwd.style.top = '50%';
+  toggleCurPwd.style.transform = 'translateY(-50%)';
+  toggleCurPwd.style.cursor = 'pointer';
+  toggleCurPwd.addEventListener('click', () => {
+      const type = curPwd.getAttribute('type') === 'password' ? 'text' : 'password';
+      curPwd.setAttribute('type', type);
+      toggleCurPwd.textContent = type === 'password' ? '🔒' : '🔓';
+  });
+
+  const toggleNewPwd = m.modal.querySelector('#toggleNewPwd');
+  const newPwd = m.modal.querySelector('#newPwd');
+  toggleNewPwd.style.position = 'absolute';
+  toggleNewPwd.style.right = '10px';
+  toggleNewPwd.style.top = '50%';
+  toggleNewPwd.style.transform = 'translateY(-50%)';
+  toggleNewPwd.style.cursor = 'pointer';
+  toggleNewPwd.addEventListener('click', () => {
+      const type = newPwd.getAttribute('type') === 'password' ? 'text' : 'password';
+      newPwd.setAttribute('type', type);
+      toggleNewPwd.textContent = type === 'password' ? '🔒' : '🔓';
+  });
+
+  m.modal.querySelector('#formPwd').addEventListener('submit', async (ev)=> {
+    ev.preventDefault();
+    const cur = m.modal.querySelector('#curPwd').value;
+    const np = m.modal.querySelector('#newPwd').value;
+    const u = (state.users || []).find(x=>x.id===session.userId);
+    if(!u) return alert('Usuário não encontrado');
+    if(u.password !== cur) return alert('Senha atual incorreta');
+    if(!np) return alert('Senha nova inválida');
+    u.password = np;
+    await save(state);
+    alert('Senha alterada');
+    m.close();
+    m.cleanup();
+  });
+}
+
 
 // ----------------- INTERN VIEW -----------------
 function calcHoursSummary(intern){
@@ -833,7 +893,12 @@ function renderManager(user){
         Painel de Gestão
       </div>
       <div class="muted small">Usuário: ${escapeHtml(user.username)} • ${escapeHtml(user.role)}</div>
-      <hr style="border-color: #eee; margin: 8px 0;">
+      
+      ${user.role === 'admin' && user.selfPasswordChange ? 
+        `<button class="button ghost" id="btnChangePwdMgr" style="width: 100%; margin: 8px 0;">Alterar Senha</button><hr style="border-color: #eee; margin: 8px 0;">` : 
+        `<hr style="border-color: #eee; margin: 8px 0;">`
+      }
+
       <div class="sidebar-item active" data-section="geral">
         <span>Geral</span>
       </div>
@@ -850,9 +915,13 @@ function renderManager(user){
       <div class="sidebar-item" data-section="configuracoes">
         <span>Configurações</span>
       </div>
+      
+      ${user.role === 'super' ? `
       <div class="sidebar-item" id="btnSidebarBackup">
         <span>Backup</span>
       </div>
+      ` : ''}
+
       <div class="sidebar-item" data-section="lixeira">
         <span>Lixeira</span>
       </div>
@@ -998,6 +1067,19 @@ function renderManager(user){
   });
   // ********************************************************
 
+  // ********** NOVO: Lógica para Alterar Senha Admin **********
+  const btnChangePwdMgr = document.getElementById('btnChangePwdMgr');
+  if (btnChangePwdMgr) {
+      btnChangePwdMgr.addEventListener('click', () => {
+          if (user.role === 'admin' && user.selfPasswordChange) {
+              showChangePwdModalManager(user);
+          } else {
+              alert('Você não tem permissão ou não é um administrador secundário para alterar a senha por aqui.');
+          }
+      });
+  }
+  // ********************************************************
+
 
   // Adiciona a lógica para alternar as seções
   document.querySelectorAll('.sidebar-item').forEach(item => {
@@ -1037,7 +1119,15 @@ function renderManager(user){
   // O botão 'Abrir Opções de Backup' na seção de conteúdo 'Backup' (caso o usuário a ative manualmente)
   const btnOpenBackupModal = document.getElementById('btnOpenBackupModal');
   if (btnOpenBackupModal) {
-    btnOpenBackupModal.addEventListener('click', showBackupModal);
+      // Adiciona o listener APENAS se for o super admin
+      if(user.role === 'super') {
+          btnOpenBackupModal.addEventListener('click', showBackupModal);
+      } else {
+          // Garante que se um admin tentar clicar no botão do main content, será alertado
+          btnOpenBackupModal.addEventListener('click', () => alert('Acesso negado. Somente o Administrador Principal pode gerenciar o Backup.'));
+          // Esconde o botão se o elemento da seção for visível para outros admins (melhor que confiar apenas no menu lateral)
+          btnOpenBackupModal.style.display = 'none';
+      }
   }
 
   // A lógica de Importação/Exportação foi movida para o modal, 
@@ -1101,8 +1191,101 @@ function renderManager(user){
   renderUsersList();
 }
 
+/**
+ * Nova função para gerar dados de Horas e Provas em formato CSV.
+ * Concatena os dois relatórios para uma visão completa.
+ * @returns {string} Dados formatados em CSV.
+ */
+function generateCsvData() {
+    // 1. Coleta e formata os dados
+    const allEntries = [];
+
+    (state.interns || []).forEach(intern => {
+        // Horas
+        (intern.hoursEntries || []).forEach(entry => {
+            const entryType = entry.hours > 0 ? 'Banco (Crédito)' : 'Negativa (Falta)';
+            const hoursValue = entry.hours; // Inclui o sinal de + ou -
+            
+            allEntries.push({
+                Tipo_Registro: 'Horas',
+                Estagiario_Nome: intern.name,
+                Estagiario_ID: intern.id,
+                Data: entry.date,
+                Detalhe: entryType,
+                Horas: hoursValue.toFixed(2).replace('.', ','), // Formato brasileiro com vírgula
+                Compensado: entry.compensated ? 'Sim' : 'Não',
+                Motivo_Razao: entry.reason ? entry.reason.replace(/["\n\r]/g, '') : '', // Limpa aspas e quebras de linha para CSV
+                Link_Prova: '', // Vazio para entradas de horas
+                Criado_Em: new Date(entry.createdAt).toLocaleString('pt-BR'),
+                Criado_Por: entry.createdByName || 'N/A'
+            });
+        });
+
+        // Provas
+        (intern.dates || []).forEach(prova => {
+            allEntries.push({
+                Tipo_Registro: 'Folga-Prova',
+                Estagiario_Nome: intern.name,
+                Estagiario_ID: intern.id,
+                Data: prova.date,
+                Detalhe: 'Folga-Prova Agendada',
+                Horas: '8,00', // Padrão de 8 horas para folga-prova, formatado
+                Compensado: 'N/A',
+                Motivo_Razao: 'Folga para realização de prova',
+                Link_Prova: prova.link || 'N/A',
+                Criado_Em: 'N/A', // Data de criação da prova não é facilmente rastreável aqui, exceto pelo Audit Log
+                Criado_Por: 'N/A'
+            });
+        });
+    });
+
+    if (allEntries.length === 0) {
+        return '';
+    }
+
+    // Ordena por Estagiário e Data
+    allEntries.sort((a, b) => {
+        if (a.Estagiario_Nome !== b.Estagiario_Nome) {
+            return a.Estagiario_Nome.localeCompare(b.Estagiario_Nome);
+        }
+        return a.Data.localeCompare(b.Data);
+    });
+
+    // 2. Geração do CSV
+    const headers = Object.keys(allEntries[0]);
+    const csvRows = [];
+    
+    // Adiciona o cabeçalho
+    csvRows.push(headers.join(';'));
+    
+    // Adiciona as linhas de dados
+    for (const row of allEntries) {
+        const values = headers.map(header => {
+            const value = row[header];
+            // Envolve o valor em aspas se contiver ponto e vírgula, quebras de linha ou aspas
+            let safeValue = String(value || '').replace(/"/g, '""'); // Escapa aspas duplas
+            if (safeValue.includes(';') || safeValue.includes('\n') || safeValue.includes('\r') || safeValue.includes('"')) {
+                safeValue = `"${safeValue}"`;
+            }
+            return safeValue;
+        });
+        csvRows.push(values.join(';'));
+    }
+
+    // Junta todas as linhas com quebra de linha
+    return csvRows.join('\n');
+}
+
+
 // NOVO: Função para o Modal de Backup
 function showBackupModal(){
+    // Restrição de acesso ao modal caso seja chamado por fora do menu lateral
+    const currentUser = (state.users || []).find(u => u.id === session.userId);
+    if (currentUser.role !== 'super') {
+        alert('Acesso negado. Somente o Administrador Principal pode gerenciar o Backup.');
+        return;
+    }
+    
     const html = `
         <div style="display:flex;justify-content:space-between;align-items:center">
           <h3>Opções de Backup (Exportar/Importar)</h3>
@@ -1111,9 +1294,12 @@ function showBackupModal(){
         <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 15px;">
           
           <div class="card" style="padding: 15px;">
-            <h4>1. SALVAR backup</h4>
-            <div class="muted small">Cria um arquivo **backup\_provas\_all.json** contendo todos os usuários, estagiários, folgas-prova e lançamentos de horas.</div>
-            <button id="btnDownloadAll" class="button" style="margin-top: 10px;">Exportar todos (.json)</button>
+            <h4>1. EXPORTAR Backup</h4>
+            <div class="muted small">Cria um arquivo com todos os dados (usuários, horas, provas, etc.).</div>
+            <div style="display:flex; gap: 10px; margin-top: 10px;">
+                <button id="btnDownloadAllJson" class="button">Exportar todos (.JSON)</button>
+                <button id="btnDownloadAllCsv" class="button alt">Exportar (CSV)</button>
+            </div>
           </div>
           
           <div class="card" style="padding: 15px;">
@@ -1129,9 +1315,23 @@ function showBackupModal(){
     
     m.modal.querySelector('#closeBackupModal').addEventListener('click', () => { m.close(); m.cleanup(); });
     
-    // Adiciona evento para Exportar
-    m.modal.querySelector('#btnDownloadAll').addEventListener('click', () => {
-        downloadBlob(JSON.stringify(state,null,2), 'backup_provas_all.json');
+    // Adiciona evento para Exportar JSON
+    m.modal.querySelector('#btnDownloadAllJson').addEventListener('click', () => {
+        downloadBlob(JSON.stringify(state,null,2), 'backup_provas_all.json', 'application/json');
+        m.close();
+        m.cleanup();
+    });
+    
+    // Adiciona evento para Exportar CSV (NOVO)
+    m.modal.querySelector('#btnDownloadAllCsv').addEventListener('click', () => {
+        const csvData = generateCsvData();
+        if (csvData) {
+             // O CSV deve ser utf-8 com BOM para que acentuações funcionem no Excel
+            const bom = '\ufeff'; // Byte Order Mark
+            downloadBlob(bom + csvData, `relatorio_provas_horas_${nowISO()}.csv`, 'text/csv;charset=utf-8;');
+        } else {
+            alert('Nenhum dado de estagiário para exportar.');
+        }
         m.close();
         m.cleanup();
     });
@@ -1518,7 +1718,7 @@ function showProvasDayDetails(iso, interns) {
     } else {
         interns.forEach(intern => {
             const prova = (intern.dates || []).find(p => p.date === iso);
-            const linkIcon = prova && prova.link ? `<a href="${prova.link}" target="_blank" class="button ghost" style="margin-left: 8px;"><i class="fa-solid fa-folder-open"></i></a>` : '';
+            const linkIcon = prova && prova.link ? `<a href="${prova.link}" target="_blank" class="button ghost" style="margin-left: 8px;">Ver prova</a>` : '';
             htmlParts.push(`<div class="row"><div><strong>${escapeHtml(intern.name)}</strong><div class="muted small">${intern.id}</div></div><div>${linkIcon}</div></div>`);
         });
     }
