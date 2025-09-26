@@ -148,7 +148,7 @@ async function initApp(){
 
     // Se você quiser **gravar** o sample data automaticamente apenas na primeira execução,
     // descomente a linha abaixo. CUIDADO: isso grava no Firebase. COMENTAR PARA DESATIVAR
-    //await save(state);
+    await save(state);
   }
 
   render();
