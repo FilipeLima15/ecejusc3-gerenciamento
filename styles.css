@@ -7,10 +7,14 @@
   --card-shadow: 0 8px 24px rgba(16,24,40,0.06);
   --danger:#ef4444;
   --ok:#10b981;
+  /* Novas cores para o login moderno */
+  --input-bg: #f3f4f6;
+  --input-border: #e5e7eb;
 }
 *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial}
 body{margin:0;background:linear-gradient(180deg,#fbfdf9,#f3f6f3);color:#0f172a;min-height:100vh}
 
+/* --- ESTILOS GERAIS DA APLICAÇÃO --- */
 .app{
   max-width:1150px;
   margin:28px auto;
@@ -263,4 +267,125 @@ h1{margin:0;font-size:20px;color:var(--accent)}
   display: flex;
   align-items: center;
   gap: 4px; /* Pequeno espaçamento entre os itens */
+}
+
+/* =======================================
+   NOVO: ESTILOS MODERNOS PARA TELA DE LOGIN
+   ======================================= */
+
+/* 1. Layout da Tela de Login */
+.login-screen {
+    display: flex;
+    justify-content: center; /* Centraliza horizontalmente */
+    align-items: center; /* Centraliza verticalmente */
+    min-height: 100vh;
+    padding: 20px;
+    background: linear-gradient(135deg, var(--bg) 0%, #f9fbf7 100%); /* Suavemente gradiente */
+}
+
+/* 2. Cartão de Login */
+.login-card {
+    max-width: 400px;
+    width: 100%;
+    padding: 30px;
+    text-align: center;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    background: var(--panel);
+}
+
+.login-card h2 {
+    color: var(--accent);
+    margin-bottom: 24px;
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+
+/* 3. Estilos dos Inputs (Mais suaves e modernos) */
+.login-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* Aumenta o espaço entre os inputs */
+}
+
+.input-modern {
+    width: 100%;
+    padding: 12px 15px;
+    border-radius: 10px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    transition: all 0.3s ease;
+    font-size: 15px;
+    color: #374151;
+}
+
+.input-modern:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(107, 142, 35, 0.2);
+    outline: none;
+    background: white;
+}
+
+/* 4. Senha com Toggle Icon (Ajuste de alinhamento) */
+.password-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.password-wrapper .input-modern {
+    padding-right: 40px; /* Garante espaço para o ícone */
+}
+
+.password-toggle-icon {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 16px;
+    transition: color 0.2s;
+}
+
+.password-toggle-icon:hover {
+    color: var(--accent);
+}
+
+/* 5. Estilos dos Botões */
+.login-buttons {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 15px;
+    flex-wrap: wrap; /* Garante que os botões se ajustem em telas menores */
+    justify-content: flex-start; /* Alinha os botões à esquerda do card */
+}
+
+/* Ajusta o botão principal de entrar */
+#btnLogin {
+    flex-grow: 1; /* Permite que o botão de Entrar cresça mais */
+    min-width: 100px;
+    padding: 10px 15px;
+}
+
+/* Ajusta os botões secundários */
+.login-buttons .button.ghost {
+    flex-grow: 0;
+    white-space: nowrap;
+    padding: 10px 15px;
+}
+
+.login-buttons .button.ghost.small {
+    /* O botão de "Esqueci a senha" deve ser menor e mais discreto */
+    font-size: 13px;
+    text-decoration: underline;
+    border: none;
+    padding: 10px 0;
+    margin-left: auto; /* Move para a direita (opcional, dependendo do layout desejado) */
+}
+
+.login-buttons .button.ghost.small:hover {
+    background: transparent;
+    color: var(--danger);
+    transform: none;
 }
