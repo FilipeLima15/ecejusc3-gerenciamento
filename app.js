@@ -86,7 +86,6 @@ async function load(){
     parsed.meta = parsed.meta || {};
     if(typeof parsed.meta.provaBlockDays === 'undefined') parsed.meta.provaBlockDays = 0;
     if(typeof parsed.meta.trashRetentionDays === 'undefined') parsed.meta.trashRetentionDays = 10;
-    // CORREÇÃO APLICADA: Garante que `dates` seja sempre um array ao carregar os dados.
     parsed.interns = (parsed.interns || []).map(i => Object.assign({ dates: [], hoursEntries:[], auditLog:[] }, i));
     parsed.pendingRegistrations = parsed.pendingRegistrations || [];
     parsed.trash = parsed.trash || [];
@@ -141,6 +140,17 @@ let userFilter = 'all';
 
 // initApp: carrega o estado. Se vazio, usa sampleData localmente mas NÃO grava automaticamente.
 async function initApp(){
+  // CORREÇÃO APLICADA: Tenta carregar a sessão do sessionStorage ao iniciar
+  const savedSession = sessionStorage.getItem('app_session');
+  if (savedSession) {
+    try {
+      session = JSON.parse(savedSession);
+    } catch (e) {
+      console.error("Falha ao analisar a sessão salva.", e);
+      session = null;
+    }
+  }
+  
   state = await load();
 
   // se o banco estava vazio, deixamos sampleData em memória — NÃO gravamos automaticamente
@@ -187,6 +197,8 @@ function render(){
   const user = (state.users || []).find(u=>u.id===session.userId);
   if(!user){
     session=null;
+    // CORREÇÃO APLICADA: Limpa a sessão inválida do sessionStorage
+    sessionStorage.removeItem('app_session');
     return renderLogin();
   }
   if(user.role==='intern') return renderIntern(user);
@@ -225,6 +237,8 @@ function renderLogin(){
     const user = (state.users || []).find(x=>x.username === u && x.password === p);
     if(!user) return alert('Usuário ou senha inválidos');
     session = { userId: user.id };
+    // CORREÇÃO APLICADA: Salva a sessão no sessionStorage ao fazer login
+    sessionStorage.setItem('app_session', JSON.stringify(session));
     // Reverte para a classe 'app' após o login
     root.className = 'app'; 
     await save(state);
@@ -524,7 +538,6 @@ function renderIntern(user){
       return;
     }
     
-    // CORREÇÃO APLICADA: Garante que `intern.dates` é um array antes de adicionar uma nova data.
     intern.dates = intern.dates || [];
     if(!intern.dates.some(p => p.date === d)) {
         intern.dates.push({ date: d, link: link });
@@ -537,7 +550,12 @@ function renderIntern(user){
     render();
   });
 
-  document.getElementById('btnLogout').addEventListener('click', ()=>{ session=null; render(); });
+  document.getElementById('btnLogout').addEventListener('click', ()=>{ 
+    session=null;
+    // CORREÇÃO APLICADA: Limpa a sessão do sessionStorage ao fazer logout
+    sessionStorage.removeItem('app_session');
+    render();
+  });
   document.getElementById('btnExportSelf').addEventListener('click', ()=>{ downloadBlob(JSON.stringify({ intern, user }, null, 2), `${(intern.name||user.username).replaceAll(' ','_')}_dados.json`); });
 
   // change password (self)
@@ -1130,7 +1148,12 @@ function renderManager(user){
     });
   });
 
-  document.getElementById('btnLogoutMgr').addEventListener('click', ()=>{ session=null; render(); });
+  document.getElementById('btnLogoutMgr').addEventListener('click', ()=>{ 
+    session=null;
+    // CORREÇÃO APLICADA: Limpa a sessão do sessionStorage ao fazer logout
+    sessionStorage.removeItem('app_session');
+    render();
+  });
   document.getElementById('btnNewUser').addEventListener('click', ()=> showCreateUserForm((state.users || []).find(u => u.id === session.userId)));
   
   // NOVO: Listener para o botão de importação em lote
@@ -2089,7 +2112,7 @@ function renderUsersList(){
   // 3. Organização por Ordem Alfabética (Nome do Estagiário, depois Usuário)
   list.sort((a,b)=> {
     const aName = a.role === 'intern' ? (findInternById(a.internId)?.name || a.name || a.username) : (a.name || a.username);
-    const bName = b.role === 'intern' ? (findInternById(b.internId)?.name || b.name || b.username) : (b.name || b.username);
+    const bName = b.role === 'intern' ? (findInternById(b.internId)?.name || b.name || b.username) : (b.name || a.username);
     
     // Tenta ordenar pelo nome (Estagiários/Admin) ou usuário
     const nameCompare = aName.localeCompare(bName, 'pt-BR', { sensitivity: 'base' });
@@ -2332,7 +2355,6 @@ function openInternManagerView(internId){
     const currentManager = (state.users || []).find(u=>u.id===session.userId);
     if(!hasPower(currentManager, 'manage_provas')) return alert('Sem permissão para gerenciar folgas-prova.');
 
-    // CORREÇÃO APLICADA: Garante que `intern.dates` é um array e adiciona a nova data.
     if(!((intern.dates || []).some(p => p.date === d))) {
       intern.dates = intern.dates || [];
       intern.dates.push({ date: d, link: link });
