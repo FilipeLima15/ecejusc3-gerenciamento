@@ -2379,7 +2379,7 @@ function renderMgrDates(intern){
   (intern.dates || []).slice().sort((a,b) => a.date.localeCompare(b.date)).forEach(p=>{
     const row = document.createElement('div'); row.className='row';
     const left = document.createElement('div'); 
-    left.innerHTML = `<div style="font-weight:700">${p.date}</div><div class="muted small">Data da folga-prova</div>`;
+    left.innerHTML = `<div style="font-weight:700; color:red;">${p.date}</div><div class="muted small">Data da folga-prova</div>`;
     
     const right = document.createElement('div'); 
     right.style.display = 'flex';
