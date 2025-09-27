@@ -1,5 +1,5 @@
 /* app.js - Versão modificada para Firebase Realtime Database.
-   Substitui localStorage por funções assíncronas de leitura e escrita no Firebase.
+   Substitui localStorage por funções assíncronas de leitura e escrita no Firebase.
 */
 
 // Cole suas credenciais do Firebase aqui. Você as encontra no seu Firebase Console.
@@ -934,13 +934,19 @@ function renderManager(user){
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <h3>Usuários</h3>
-            <button id="btnNewUser" class="button ghost">Novo usuário</button>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <button id="btnNewUser" class="button ghost">Novo usuário</button>
+              <button id="btnBulkImport" class="button alt">Criar em lote</button>
+            </div>
           </div>
           <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
-             <div id="userFilterButtons" style="display:flex;gap:8px;align-items:center;">
-                <button class="button" id="filterAll" data-filter="all">Todos</button>
-                <button class="button ghost" id="filterIntern" data-filter="intern">Estagiário</button>
-                <button class="button ghost" id="filterAdmin" data-filter="admin">Admin</button>
+             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap">
+                <div id="userFilterButtons" style="display:flex;gap:8px;align-items:center;">
+                   <button class="button" id="filterAll" data-filter="all">Todos</button>
+                   <button class="button ghost" id="filterIntern" data-filter="intern">Estagiário</button>
+                   <button class="button ghost" id="filterAdmin" data-filter="admin">Admin</button>
+                </div>
+                <button id="btnDeleteSelectedUsers" class="button danger" disabled>Excluir selecionados</button>
              </div>
              <input id="searchMgmt" placeholder="Pesquisar por nome, usuário ou ID" />
              <div class="muted small">Total de usuários: <span id="totalUsers"></span></div>
@@ -1046,6 +1052,7 @@ function renderManager(user){
     </main>
     
     <input type="file" id="fileMgmt" style="display:none" accept="application/json" />
+    <input type="file" id="fileBulkImport" style="display:none" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
     `;
   
   // ********** NOVO: Lógica de Filtro de Usuários **********
@@ -1071,8 +1078,9 @@ function renderManager(user){
   const btnChangePwdMgr = document.getElementById('btnChangePwdMgr');
   if (btnChangePwdMgr) {
       btnChangePwdMgr.addEventListener('click', () => {
-          if (user.role === 'admin' && user.selfPasswordChange) {
-              showChangePwdModalManager(user);
+          const manager = (state.users || []).find(u => u.id === session.userId);
+          if (manager.role === 'admin' && manager.selfPasswordChange) {
+              showChangePwdModalManager(manager);
           } else {
               alert('Você não tem permissão ou não é um administrador secundário para alterar a senha por aqui.');
           }
@@ -1080,6 +1088,11 @@ function renderManager(user){
   }
   // ********************************************************
 
+  // NOVO: Handler para o botão de exclusão em lote
+  const btnDeleteSelectedUsers = document.getElementById('btnDeleteSelectedUsers');
+  if (btnDeleteSelectedUsers) {
+      btnDeleteSelectedUsers.addEventListener('click', deleteSelectedUsers);
+  }
 
   // Adiciona a lógica para alternar as seções
   document.querySelectorAll('.sidebar-item').forEach(item => {
@@ -1114,7 +1127,14 @@ function renderManager(user){
   });
 
   document.getElementById('btnLogoutMgr').addEventListener('click', ()=>{ session=null; render(); });
-  document.getElementById('btnNewUser').addEventListener('click', ()=> showCreateUserForm(user));
+  document.getElementById('btnNewUser').addEventListener('click', ()=> showCreateUserForm((state.users || []).find(u => u.id === session.userId)));
+  
+  // NOVO: Listener para o botão de importação em lote
+  document.getElementById('btnBulkImport').addEventListener('click', () => {
+    const manager = (state.users || []).find(u => u.id === session.userId);
+    if(!hasPower(manager, 'create_intern')) return alert('Sem permissão para criar estagiários em lote.');
+    showBulkImportModal();
+  });
 
   // O botão 'Abrir Opções de Backup' na seção de conteúdo 'Backup' (caso o usuário a ative manualmente)
   const btnOpenBackupModal = document.getElementById('btnOpenBackupModal');
@@ -1132,7 +1152,7 @@ function renderManager(user){
 
   // A lógica de Importação/Exportação foi movida para o modal, 
   // mas o 'fileMgmt' é universal e precisa ser configurado.
-  // Novo: Handler para o input de arquivo (Importação)
+  // Novo: Handler para o input de arquivo (Importação de Backup)
   document.getElementById('fileMgmt').addEventListener('change', (ev)=>{ 
       const f = ev.target.files[0]; 
       if(!f) return; 
@@ -1373,6 +1393,220 @@ async function importDataFromFile(file) {
     };
     r.readAsText(file);
 }
+
+// NOVO: Variável global para armazenar dados importados em lote
+let importedUserData = [];
+
+// NOVO: Função para o Modal de Importação em Lote (Excel)
+function showBulkImportModal(){
+    const html = `
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+                <h3>CRIAR USUÁRIOS EM LOTE (ESTAGIÁRIO)</h3>
+                <div class="muted small">Carregue um arquivo Excel/CSV com os dados dos estagiários a serem criados.</div>
+            </div>
+            <button id="closeBulkImport" class="button ghost">Cancelar</button>
+        </div>
+        <div class="card" style="margin-top:10px; padding: 15px; background: var(--input-bg); border: 1px dashed var(--input-border);">
+            <h4>Formato da Planilha:</h4>
+            <div class="muted small">A planilha deve conter 4 colunas na primeira aba, com a primeira linha sendo o cabeçalho:</div>
+            <ul style="list-style-type: disc; padding-left: 20px; font-size: 14px;">
+                <li><strong>Coluna A: Nome completo</strong></li>
+                <li><strong>Coluna B: Usuário</strong> (Matrícula, ex: e710021)</li>
+                <li><strong>Coluna C: Senha</strong> (Se vazia, será 'senha123')</li>
+                <li><strong>Coluna D: Permitir alteração de senha (Sim/Não)</strong></li>
+            </ul>
+            <div class="form-check" style="margin-top: 10px;">
+                <input type="checkbox" id="userTypeBulk" checked disabled />
+                <label for="userTypeBulk" style="font-weight: 600;">Cargo: Estagiário (Fixo)</label>
+            </div>
+        </div>
+
+        <div style="display:flex; gap: 10px; margin-top: 15px; align-items:center;">
+            <button id="btnTriggerFile" class="button alt" style="min-width: 150px;">Carregar Planilha (.xlsx/.csv)</button>
+            <span id="fileNameDisplay" class="small-muted" style="flex-grow: 1;">Nenhum arquivo carregado.</span>
+        </div>
+        
+        <div id="bulkStatus" style="margin-top: 15px;"></div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top: 15px;">
+            <button id="btnCreateInBatch" class="button" disabled>Criar em Lote (0 usuários)</button>
+        </div>
+    `;
+    const m = showModal(html, { allowBackdropClose: true });
+    
+    const btnTriggerFile = m.modal.querySelector('#btnTriggerFile');
+    const btnCreateInBatch = m.modal.querySelector('#btnCreateInBatch');
+    const fileNameDisplay = m.modal.querySelector('#fileNameDisplay');
+    const bulkStatus = m.modal.querySelector('#bulkStatus');
+    const fileInput = document.getElementById('fileBulkImport');
+    
+    // Zera o estado para um novo uso do modal
+    importedUserData = [];
+    btnCreateInBatch.textContent = 'Criar em Lote (0 usuários)';
+    btnCreateInBatch.disabled = true;
+    fileInput.value = null; // Limpa o input file
+
+    m.modal.querySelector('#closeBulkImport').addEventListener('click', () => { m.close(); m.cleanup(); });
+    
+    // 1. Abre o seletor de arquivo
+    btnTriggerFile.addEventListener('click', () => fileInput.click());
+
+    // 2. Processa o arquivo carregado
+    fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        fileNameDisplay.textContent = `Arquivo: ${file.name}`;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                // É obrigatório que a biblioteca XLSX esteja incluída no index.html
+                if (typeof XLSX === 'undefined') {
+                    throw new Error('A biblioteca SheetJS (xlsx.js) não foi carregada no index.html.');
+                }
+                
+                const data = new Uint8Array(event.target.result);
+                // Usa SheetJS para ler o arquivo como ArrayBuffer
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                
+                // Converte para Array de Arrays, ignorando o cabeçalho (header: 1)
+                const sheetData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: false });
+                
+                // Valida e armazena os dados
+                importedUserData = validateExcelData(sheetData);
+
+                const validCount = importedUserData.length;
+                bulkStatus.innerHTML = `<div class="chip" style="background:${validCount > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color:${validCount > 0 ? 'var(--ok)' : 'var(--danger)'};">Pronto para criação: <strong>${validCount}</strong> estagiário(s) válido(s)</div>`;
+                
+                btnCreateInBatch.textContent = `Criar em Lote (${validCount} usuários)`;
+                btnCreateInBatch.disabled = validCount === 0;
+
+            } catch (error) {
+                bulkStatus.innerHTML = `<div class="chip" style="background:rgba(239,68,68,0.1); color:var(--danger);">Erro ao processar planilha: ${error.message}</div>`;
+                importedUserData = [];
+                btnCreateInBatch.textContent = 'Criar em Lote (0 usuários)';
+                btnCreateInBatch.disabled = true;
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    // 3. Cria os usuários em lote
+    btnCreateInBatch.onclick = async () => {
+        if (importedUserData.length === 0) return alert('Nenhum dado válido para criar.');
+        
+        if (!confirm(`Deseja realmente criar ${importedUserData.length} novos estagiários?`)) return;
+        
+        const totalToCreate = importedUserData.length;
+        let createdCount = 0;
+        const manager = (state.users || []).find(u=>u.id===session.userId);
+        const creationDate = timestamp();
+
+        for (const userData of importedUserData) {
+            const internId = uuid();
+            const userId = uuid();
+            
+            // Cria o estagiário
+            (state.interns || []).push({ 
+                id: internId, 
+                name: userData.name, 
+                dates: [], 
+                hoursEntries: [], 
+                auditLog: [] 
+            });
+            
+            // Cria o usuário
+            (state.users || []).push({ 
+                id: userId, 
+                username: userData.username, 
+                name: userData.name, 
+                password: userData.password, 
+                role:'intern', 
+                internId: internId, 
+                powers: defaultPowersFor('intern'), 
+                selfPasswordChange: userData.allowSelfPwd, 
+                createdAt: creationDate 
+            });
+            
+            // Registra no log do criador
+            manager.auditLog = manager.auditLog || [];
+            manager.auditLog.push({ id: uuid(), action:'bulk_create_intern', byUserId: manager.id, byUserName: manager.username, at: creationDate, details: `Criou estagiário ${userData.name} (${userData.username}) via lote` });
+
+            createdCount++;
+        }
+        
+        await save(state);
+        alert(`Criação em lote concluída! ${createdCount} de ${totalToCreate} estagiários criados com sucesso.`);
+        m.close(); 
+        m.cleanup(); 
+        render(); // Recarrega o painel de gestão para exibir os novos usuários
+    };
+
+}
+
+/**
+ * NOVO: Valida os dados da planilha e formata.
+ * @param {Array<Array<string>>} sheetData - Dados lidos do SheetJS (array de arrays).
+ * @returns {Array<Object>} Array de objetos de usuário válidos.
+ */
+function validateExcelData(sheetData) {
+    const validUsers = [];
+    const existingUsernames = new Set((state.users || []).map(u => u.username.toLowerCase()));
+    
+    // Ignora a primeira linha (cabeçalho)
+    const dataRows = sheetData.slice(1); 
+    
+    if (dataRows.length === 0) throw new Error('A planilha não contém dados de usuários.');
+
+    // Colunas: A=0 (Nome), B=1 (Usuário/Matrícula), C=2 (Senha), D=3 (Permitir Senha)
+    dataRows.forEach((row, index) => {
+        // Ignora linhas vazias
+        if (!row || row.filter(cell => String(cell).trim() !== '').length === 0) return; 
+
+        const name = String(row[0] || '').trim();
+        const username = String(row[1] || '').trim().toLowerCase();
+        const password = String(row[2] || '').trim() || 'senha123';
+        const allowSelfPwdText = String(row[3] || '').trim().toLowerCase();
+        
+        // Coluna D: 'Sim' ou 'Não'. Qualquer outra coisa é tratada como 'Não' (false)
+        const allowSelfPwd = allowSelfPwdText === 'sim';
+        
+        const isMatriculaValid = /^e\d{6}$/.test(username);
+
+        // Validação mínima
+        if (!name) {
+            console.warn(`Linha ${index + 2} ignorada: Nome completo vazio.`);
+            return;
+        }
+        if (!username) {
+            console.warn(`Linha ${index + 2} ignorada: Usuário/Matrícula vazio.`);
+            return;
+        }
+        if (!isMatriculaValid) {
+             console.warn(`Linha ${index + 2} ignorada: Usuário/Matrícula "${username}" inválido (formato esperado: e123456).`);
+            return;
+        }
+        if (existingUsernames.has(username)) {
+            console.warn(`Linha ${index + 2} ignorada: Usuário "${username}" já existe no sistema.`);
+            return;
+        }
+
+        validUsers.push({
+            name: name,
+            username: username,
+            password: password,
+            allowSelfPwd: allowSelfPwd
+        });
+        
+        existingUsernames.add(username); // Adiciona para evitar duplicatas dentro do mesmo lote
+    });
+
+    return validUsers;
+}
+
 
 // Novo: Função para renderizar a lista de pré-cadastros pendentes
 function renderPendingList(){
@@ -1730,6 +1964,107 @@ function showProvasDayDetails(iso, interns) {
 }
 
 // ----------------- renderUsersList (esquerda) -----------------
+// NOVO: Função para atualizar o estado do botão de exclusão em lote
+function updateBulkDeleteButtonState() {
+    const selectedCount = document.querySelectorAll('#usersList .user-row-selectable input[type="checkbox"]:checked').length;
+    const button = document.getElementById('btnDeleteSelectedUsers');
+    const currentUser = (state.users || []).find(u => u.id === session.userId);
+    const canDelete = hasPower(currentUser, 'delete_user');
+    
+    if (button) {
+        button.textContent = `Excluir selecionados (${selectedCount})`;
+        // Habilita o botão se houver itens selecionados E o usuário tiver permissão
+        button.disabled = selectedCount === 0 || !canDelete; 
+        if (!canDelete) {
+            button.title = 'Você não tem permissão para excluir usuários.';
+        } else if (selectedCount === 0) {
+            button.title = 'Selecione pelo menos um perfil.';
+        } else {
+            button.title = '';
+        }
+    }
+}
+
+// NOVO: Função principal de exclusão em lote
+async function deleteSelectedUsers() {
+    const checkboxes = document.querySelectorAll('#usersList .user-row-selectable input[type="checkbox"]:checked');
+    const idsToDelete = Array.from(checkboxes).map(cb => cb.dataset.userId);
+    const currentUser = (state.users || []).find(u => u.id === session.userId);
+    
+    if (idsToDelete.length === 0) {
+        return alert('Selecione pelo menos um perfil para excluir.');
+    }
+    
+    if (!hasPower(currentUser, 'delete_user')) {
+        return alert('Você não tem permissão para excluir usuários.');
+    }
+    
+    // Evita a exclusão do Super Admin, caso ele esteja listado e selecionado.
+    const superAdmin = (state.users || []).find(u => u.role === 'super');
+    const finalIdsToDelete = idsToDelete.filter(id => id !== superAdmin.id);
+    
+    if (finalIdsToDelete.length !== idsToDelete.length) {
+        alert('Atenção: O Administrador Principal não pode ser excluído.');
+    }
+    
+    if (finalIdsToDelete.length === 0) {
+        return; // Não há nada para excluir após a filtragem
+    }
+    
+    if (!confirm(`Tem certeza que deseja mover ${finalIdsToDelete.length} perfil(is) para a lixeira? Todos os dados associados serão perdidos.`)) {
+        return;
+    }
+
+    const deletedAt = timestamp();
+    const manager = currentUser;
+    
+    // 1. Processa e move para a lixeira
+    const usersToProcess = (state.users || []).filter(u => finalIdsToDelete.includes(u.id));
+    
+    for (const userToDelete of usersToProcess) {
+        userToDelete.status = 'deleted';
+        userToDelete.deletedAt = deletedAt;
+        
+        const internData = userToDelete.internId ? findInternById(userToDelete.internId) : null;
+        
+        // Adiciona à lixeira
+        (state.trash || []).push({
+            id: uuid(),
+            type: 'user',
+            userId: userToDelete.id,
+            username: userToDelete.username,
+            role: userToDelete.role,
+            internId: userToDelete.internId,
+            internName: internData ? internData.name : null,
+            deletedAt: userToDelete.deletedAt,
+            createdAt: userToDelete.createdAt || timestamp()
+        });
+        
+        // Adiciona ao log de auditoria
+        manager.auditLog = manager.auditLog || [];
+        manager.auditLog.push({ 
+            id: uuid(), 
+            action:'bulk_delete_user', 
+            byUserId: manager.id, 
+            byUserName: manager.username, 
+            at: deletedAt, 
+            details: `Excluiu em lote o usuário ${userToDelete.username}` 
+        });
+    }
+
+    // 2. Remove do estado ativo
+    state.users = (state.users || []).filter(u => !finalIdsToDelete.includes(u.id));
+    state.interns = (state.interns || []).filter(i => {
+        const user = usersToProcess.find(u => u.internId === i.id);
+        return !user; // Remove se o estagiário pertencia a um usuário excluído
+    });
+    
+    await save(state);
+    alert(`${finalIdsToDelete.length} perfil(is) movido(s) para a lixeira com sucesso.`);
+    render(); // Recarrega o painel
+}
+
+
 function renderUsersList(){
   const q = document.getElementById('searchMgmt').value.trim().toLowerCase();
   const container = document.getElementById('usersList'); container.innerHTML='';
@@ -1760,10 +2095,13 @@ function renderUsersList(){
     return a.role.localeCompare(b.role);
   });
   
+  const currentUser = (state.users || []).find(u => u.id === session.userId);
+  const canDelete = hasPower(currentUser, 'delete_user');
+
   list.forEach(u=>{
-    const row = document.createElement('div'); row.className = 'row';
+    const row = document.createElement('div'); 
+    row.className = 'row user-row-selectable'; // NOVO: Adiciona classe para estilização e seleção
     
-    // ********** ALTERAÇÃO AQUI: Formatação Nome (Matrícula) **********
     let displayName;
     let roleText = u.role;
     
@@ -1772,25 +2110,50 @@ function renderUsersList(){
         displayName = `${escapeHtml(internName)} (${escapeHtml(u.username)})`;
         roleText = 'estagiário(a)';
     } else {
-        // Para admins, mostra o 'name' (Nome Completo) e o 'username' (Matrícula/Login)
-        // Se o nome não foi preenchido, usa o username no lugar
         const name = u.name || u.username; 
         displayName = `${escapeHtml(name)} (${escapeHtml(u.username)})`;
     }
     
-    // 2. Adiciona a data de criação formatada (dd/mm/aaaa)
     const createdDate = formatDate(u.createdAt);
     const roleAndDateDisplay = `${roleText} (${createdDate})`;
-
+    
+    // NOVO: Verifica se o usuário é o Super Admin
+    const isSuperAdmin = u.role === 'super';
+    
+    // 1. Checkbox
+    const checkboxHtml = canDelete && !isSuperAdmin
+        ? `<input type="checkbox" data-user-id="${u.id}" class="user-select-checkbox" />`
+        : (isSuperAdmin ? `<div class="icon-placeholder" title="Administrador Principal não pode ser excluído">👑</div>` : '<div class="icon-placeholder"></div>'); // Placeholder para alinhar
+        
+    // 2. Detalhes (Left)
     const left = document.createElement('div'); 
     left.innerHTML = `<div style="font-weight:700">${displayName}</div><div class="muted small">${roleAndDateDisplay}</div>`;
+    
+    // 3. Ações (Right)
     const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.gap = '8px';
+
     const btnView = document.createElement('button'); btnView.className='button ghost'; btnView.textContent='Abrir'; btnView.addEventListener('click', ()=> openUserManagerView(u.id));
     const btnEdit = document.createElement('button'); btnEdit.className='button'; btnEdit.textContent='Editar'; btnEdit.addEventListener('click', ()=> showEditUserForm(u.id));
-    right.appendChild(btnView); right.appendChild(btnEdit);
-    row.appendChild(left); row.appendChild(right);
+    right.appendChild(btnView); 
+    right.appendChild(btnEdit);
+    
+    // Monta a linha: Checkbox | Detalhes | Ações
+    row.innerHTML = checkboxHtml;
+    row.appendChild(left);
+    row.appendChild(right);
     container.appendChild(row);
+    
+    // Adiciona listener ao checkbox
+    const checkbox = row.querySelector('.user-select-checkbox');
+    if (checkbox) {
+        checkbox.addEventListener('change', updateBulkDeleteButtonState);
+    }
   });
+  
+  // NOVO: Garante que o estado do botão de exclusão seja atualizado após a renderização
+  updateBulkDeleteButtonState();
 }
 
 // ----------------- renderReports() -----------------
