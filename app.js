@@ -86,7 +86,8 @@ async function load(){
     parsed.meta = parsed.meta || {};
     if(typeof parsed.meta.provaBlockDays === 'undefined') parsed.meta.provaBlockDays = 0;
     if(typeof parsed.meta.trashRetentionDays === 'undefined') parsed.meta.trashRetentionDays = 10;
-    parsed.interns = (parsed.interns || []).map(i => Object.assign({ hoursEntries:[], auditLog:[] }, i));
+    // CORREÇÃO APLICADA: Garante que `dates` seja sempre um array ao carregar os dados.
+    parsed.interns = (parsed.interns || []).map(i => Object.assign({ dates: [], hoursEntries:[], auditLog:[] }, i));
     parsed.pendingRegistrations = parsed.pendingRegistrations || [];
     parsed.trash = parsed.trash || [];
     const fallbackDate = parsed.meta.created || timestamp();
@@ -523,8 +524,11 @@ function renderIntern(user){
       return;
     }
     
-    // Provas agora são objetos com data e link
-    if(!intern.dates.find(p => p.date === d)) intern.dates.push({ date: d, link: link });
+    // CORREÇÃO APLICADA: Garante que `intern.dates` é um array antes de adicionar uma nova data.
+    intern.dates = intern.dates || [];
+    if(!intern.dates.some(p => p.date === d)) {
+        intern.dates.push({ date: d, link: link });
+    }
 
     await save(state); 
     // Limpa os campos após adicionar
@@ -2328,8 +2332,10 @@ function openInternManagerView(internId){
     const currentManager = (state.users || []).find(u=>u.id===session.userId);
     if(!hasPower(currentManager, 'manage_provas')) return alert('Sem permissão para gerenciar folgas-prova.');
 
-    if(!((intern.dates) || []).find(p => p.date === d)) {
-      (intern.dates || []).push({ date: d, link: link });
+    // CORREÇÃO APLICADA: Garante que `intern.dates` é um array e adiciona a nova data.
+    if(!((intern.dates || []).some(p => p.date === d))) {
+      intern.dates = intern.dates || [];
+      intern.dates.push({ date: d, link: link });
     }
     
     const manager = (state.users || []).find(u=>u.id===session.userId);
